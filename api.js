@@ -33,33 +33,36 @@ async function getAccessToken() {
 
 const shortcode = process.env.MPESA_PAYBILL;
 
-// Sample API route
-router.get('/api/home', (req, res) => {
-  res.json({ message: 'This is a sample API route.' });
-  console.log("This is a sample API route.");
-});
-
-// Access token route
-router.get("/api/access_token", async (req, res) => {
-  try {
-    const accessToken = await getAccessToken();
-    res.json({ message: "😀 Your access token is " + accessToken });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Failed to get access token" });
-  }
-});
-
 // MPESA STK push route
 router.post("/api/stkpush", async (req, res) => {
   let { name, email, phone, amount, ticketType, totalQuantity, seats } = req.body;
 
-  // Convert seats array to a comma-separated string
+  // Convert seats array to a comma-separated string (only for VIP tickets)
   let seatsString = seats ? seats.join(",") : "";
 
-  // Validate required fields
-  if (!name || !email || !phone || amount === undefined || ticketType === undefined || typeof totalQuantity !== 'number' || !Array.isArray(seats) || seats.length === 0) {
-    return res.status(400).json({ error: "Missing or invalid required fields" });
+  // Validate required fields with more specific messages
+  if (!name) {
+    return res.status(400).json({ error: "Name is required" });
+  }
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  if (!phone) {
+    return res.status(400).json({ error: "Phone number is required" });
+  }
+  if (amount === undefined) {
+    return res.status(400).json({ error: "Amount is required" });
+  }
+  if (ticketType === undefined) {
+    return res.status(400).json({ error: "Ticket type is required" });
+  }
+  if (typeof totalQuantity !== 'number') {
+    return res.status(400).json({ error: "Total quantity must be a number" });
+  }
+  
+  // Only validate seats if ticketType is 'vip'
+  if (ticketType === "vip" && (!Array.isArray(seats) || seats.length === 0)) {
+    return res.status(400).json({ error: "Seats are required for VIP tickets" });
   }
 
   // Format the phone number if it starts with 0
@@ -106,24 +109,24 @@ router.post("/api/stkpush", async (req, res) => {
       amount,
       ticketType,
       totalQuantity,
-      seats: seatsString, // Store as a comma-separated string
+      seats: seatsString, // Store as a comma-separated string (only for VIP)
       CheckoutRequestID,
       timestamp,
       status: "PENDING",
     });
 
-    // Update seat statuses to "sold"
-    const seatsArray = seats.map(Number); // Convert seats to numbers
-    const seatUpdateResult = await db.collection(seatsCollectionName).updateMany(
-      { seatNumber: { $in: seatsArray } },
-      { $set: { status: "sold" } }
-    );
+    // Update seat statuses to "sold" (for VIP tickets)
+    if (ticketType === "vip") {
+      const seatsArray = seats.map(Number); // Convert seats to numbers
+      const seatUpdateResult = await db.collection(seatsCollectionName).updateMany(
+        { seatNumber: { $in: seatsArray } },
+        { $set: { status: "sold" } }
+      );
+      console.log(`Updated ${seatUpdateResult.modifiedCount} seats to "sold"`);
+    }
 
-    console.log(`Updated ${seatUpdateResult.modifiedCount} seats to "sold"`);
-
-    console.log(response.data);
     res.status(200).json({
-      msg: "Request is successfully done ✔✔. Please enter mpesa pin to complete the transaction",
+      msg: "Request successfully processed. Please enter MPESA PIN to complete the transaction.",
       status: true,
       transactionId: CheckoutRequestID
     });
