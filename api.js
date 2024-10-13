@@ -33,32 +33,19 @@ async function getAccessToken() {
 
 const shortcode = process.env.MPESA_PAYBILL;
 
-// Sample API route
-router.get('/api/home', (req, res) => {
-  res.json({ message: 'This is a sample API route.' });
-  console.log("This is a sample API route.");
-});
-
-// Access token route
-router.get("/api/access_token", async (req, res) => {
-  try {
-    const accessToken = await getAccessToken();
-    res.json({ message: "😀 Your access token is " + accessToken });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Failed to get access token" });
-  }
-});
-
 // MPESA STK push route
 router.post("/api/stkpush", async (req, res) => {
   let { name, email, phone, amount, ticketType, totalQuantity, seats } = req.body;
 
-  // Convert seats array to a comma-separated string
-  let seatsString = seats ? seats.join(",") : "";
+  // Conditionally process seats only for VIP tickets
+  let seatsString = "";
+  if (ticketType === "vip" && seats && seats.length > 0) {
+    // Convert seats array to a comma-separated string for VIP tickets
+    seatsString = seats.join(",");
+  }
 
   // Validate required fields
-  if (!name || !email || !phone || amount === undefined || ticketType === undefined || typeof totalQuantity !== 'number' || !Array.isArray(seats) || seats.length === 0) {
+  if (!name || !email || !phone || amount === undefined || ticketType === undefined || typeof totalQuantity !== 'number') {
     return res.status(400).json({ error: "Missing or invalid required fields" });
   }
 
@@ -73,9 +60,7 @@ router.post("/api/stkpush", async (req, res) => {
     const auth = "Bearer " + accessToken;
     const timestamp = moment().format("YYYYMMDDHHmmss");
     const password = Buffer.from(
-      shortcode +
-      process.env.MPESA_PASSKEY +
-      timestamp
+      shortcode + process.env.MPESA_PASSKEY + timestamp
     ).toString("base64");
 
     const response = await axios.post(url, {
@@ -106,20 +91,21 @@ router.post("/api/stkpush", async (req, res) => {
       amount,
       ticketType,
       totalQuantity,
-      seats: seatsString, // Store as a comma-separated string
+      seats: seatsString, // Store as a comma-separated string for VIP tickets
       CheckoutRequestID,
       timestamp,
       status: "PENDING",
     });
 
-    // Update seat statuses to "sold"
-    const seatsArray = seats.map(Number); // Convert seats to numbers
-    const seatUpdateResult = await db.collection(seatsCollectionName).updateMany(
-      { seatNumber: { $in: seatsArray } },
-      { $set: { status: "sold" } }
-    );
-
-    console.log(`Updated ${seatUpdateResult.modifiedCount} seats to "sold"`);
+    // Update seat statuses to "sold" only for VIP tickets
+    if (ticketType === "vip" && seats && seats.length > 0) {
+      const seatsArray = seats.map(Number); // Convert seats to numbers
+      const seatUpdateResult = await db.collection(seatsCollectionName).updateMany(
+        { seatNumber: { $in: seatsArray } },
+        { $set: { status: "sold" } }
+      );
+      console.log(`Updated ${seatUpdateResult.modifiedCount} seats to "sold"`);
+    }
 
     console.log(response.data);
     res.status(200).json({
@@ -137,7 +123,7 @@ router.post("/api/stkpush", async (req, res) => {
   }
 });
 
-// STK push callback route
+// STK push callback route (no changes)
 router.post("/api/callback", async (req, res) => {
   console.log("STK PUSH CALLBACK");
   const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = req.body.Body.stkCallback;
@@ -192,7 +178,7 @@ router.post("/api/callback", async (req, res) => {
   res.status(200).send("Callback received");
 });
 
-// Payment status check route
+// Payment status check route (no changes)
 router.get("/api/payment-status/:checkoutRequestID", async (req, res) => {
   const { checkoutRequestID } = req.params;
   try {
@@ -206,7 +192,7 @@ router.get("/api/payment-status/:checkoutRequestID", async (req, res) => {
   }
 });
 
-// Fetch seat status route
+// Fetch seat status route (no changes)
 router.get('/seats-status', async (req, res) => {
   try {
     const seats = await client.db(dbName).collection(seatsCollectionName).find({}).toArray();
